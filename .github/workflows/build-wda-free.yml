@@ -1,0 +1,47 @@
+name: Build WDA Free Account
+
+on:
+  workflow_dispatch:   # Запуск вручную из браузера
+
+jobs:
+  build:
+    runs-on: macos-15   # macOS 15 (или macos-latest, если в 2026 доступно выше)
+
+    steps:
+      - name: Checkout WebDriverAgent code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies (bootstrap)
+        run: |
+          ./Scripts/bootstrap.sh -d
+
+      - name: Build & Sign WDA (free provisioning)
+        run: |
+          xcodebuild build-for-testing \
+            -project WebDriverAgent.xcodeproj \
+            -scheme WebDriverAgentRunner \
+            -destination 'generic/platform=iOS,id=${{ secrets.DEVICE_UDID }}' \
+            -allowProvisioningUpdates \
+            CODE_SIGN_STYLE=Automatic \
+            CODE_SIGN_IDENTITY="Apple Development" \
+            | xcpretty || true
+
+      - name: Find built .app and zip it
+        run: |
+          APP_DIR=$(find ~/Library/Developer/Xcode/DerivedData -type d -name "WebDriverAgent-*" -maxdepth 1 | head -1)
+          if [ -z "$APP_DIR" ]; then echo "DerivedData not found!"; exit 1; fi
+          APP_PATH="$APP_DIR/Build/Products/Debug-iphoneos/WebDriverAgentRunner-Runner.app"
+          if [ ! -d "$APP_PATH" ]; then echo "App not found!"; exit 1; fi
+          
+          mkdir -p artifact/Payload
+          cp -r "$APP_PATH" artifact/Payload/
+          cd artifact
+          zip -r ../wda-signed.zip .
+          cd ..
+
+      - name: Upload the signed WDA zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed-wda-free
+          path: wda-signed.zip
+          retention-days: 7
